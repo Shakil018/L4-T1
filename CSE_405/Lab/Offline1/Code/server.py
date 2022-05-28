@@ -1,6 +1,9 @@
 import socket, os
 import threading
 import AES, RSA
+import json
+import time
+
 
 class ClientThread(threading.Thread):
     def __init__(self, clientAdd, clientSocket):
@@ -10,32 +13,48 @@ class ClientThread(threading.Thread):
         print("New connection from: ", self.clientAdd)
 
     def run(self):
-        print("Connection from : ", self.clientAdd)
-        self.clientSocket.send(bytes("send_something",'utf-8'))
-        received_msg = ''
+        # print("New Connection from : ", self.clientAdd)
         while True:
-            data = self.clientSocket.recv(2048)
-            received_msg = data.decode()
-            received_msg = received_msg.split("####")
+            self.clientSocket.send(bytes("send_something", 'utf-8'))
+            # print("before dat reception: ")
+            data = self.clientSocket.recv(1024).decode()
 
-            encrypted_msg = received_msg[0]
-            encrypted_key = received_msg[1]
-            public_key = received_msg[2]
-            N = received_msg[3]
-            key_len = received_msg[4]
+            # print("data, ", data)
+            # print("len(data): ", len(data))
+            # print("before making json loads")
 
-            fileDir = open("/Don’t Open this/PRK.txt", "r")
+            received_json = {}
+            if data != "" or len(data) != 0:
+                # print("inside if")
+                received_json = json.loads(data)
+
+            print("client sent: ", received_json)
+
+            encrypted_msg = received_json["encrypted_msg"]
+            encrypted_key = received_json["encrypted_key"]
+            public_key = received_json["public_key"]
+            N = received_json["N"]
+
+            fileDir = open("./Don’t Open this/PRK.txt", "r")
             private_key = fileDir.readline()
+            print("read from prk.txt, private key: ", private_key)
 
-            AES_key = RSA.RSA_Decryption(encrypted_key, private_key, N, key_len)
-            # Insert here the AES key to the AES_handler
-            decrypted_hex = AES.DecryptMessage()
+            AES_key = RSA.RSA_Decryption(encrypted_key, private_key, N)
+
+            print("This is the decrypted AES key: ", AES_key)
+
+            AES.AES_handler(AES_key)
+            decrypted_hex = AES.DecryptMessage(encrypted_msg)
             decrypted_msg = AES.print_message(decrypted_hex)
 
-            fileDir = "/Don’t Open this/DPT.txt"
+            print("decrypted msg : {} to file".format(decrypted_msg))
+
+            fileDir = "./Don’t Open this/DPT.txt"
             os.makedirs(os.path.dirname(fileDir), exist_ok=True)
             with open(fileDir, "w") as file:
                 file.write(decrypted_msg)
+
+            print("writing to file done")
 
             # if received_msg == 'close':
             #     break
@@ -44,6 +63,9 @@ class ClientThread(threading.Thread):
             # send_msg = input("Say something to client: ")
             send_msg = "check"
             self.clientSocket.send(bytes(send_msg, 'UTF-8'))
+
+            print("sent 'check' to client")
+            time.sleep(1)
 
 
         print("Client at ", self.clientAdd, " disconnected...")

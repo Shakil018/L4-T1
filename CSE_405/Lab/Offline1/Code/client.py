@@ -1,45 +1,84 @@
 import socket
 import os
 import AES, RSA
+import time
+import json
+
+
+def convertToJson(enc_msg, enc_key, public_key, N):
+
+
+  json_text = {
+    "encrypted_msg": enc_msg,
+    "encrypted_key": enc_key,
+    "public_key": public_key,
+    "N": N
+  }
+
+  print("json to send: ", json_text)
+  return json.dumps(json_text)
+
 
 
 PORT = 12345
 clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 clientSocket.connect(("127.0.0.1", PORT))
 
-clientSocket.sendall(bytes("This is from Client",'UTF-8'))
+# clientSocket.sendall(bytes("This is from Client",'UTF-8'))
 while True:
-  fromServer = clientSocket.recv(1024)
-  print("From Server :", fromServer.decode())
+  fromServer = clientSocket.recv(2048).decode()
+  print("From Server :", fromServer.strip())
 
-  if fromServer == "send_something":
+  if fromServer.strip() == "send_something":
+    print("inside if")
     toServer = input("Say something to Server: ")
     key_len = input("Enter RSA key length: ")
     AES_key = input("Enter AES key: ")
 
     encrypted_key, public_key, private_key, N = RSA.RSA_Encryption(AES_key, key_len)
 
-    fileDir = "/Don’t Open this/PRK.txt"
+    fileDir = "./Don’t Open this/PRK.txt"
     os.makedirs(os.path.dirname(fileDir), exist_ok=True)
     with open(fileDir, "w") as file:
-      file.write(private_key)
+      file.write(str(private_key))
 
-    AES.AES_handler()
+    AES.AES_handler(AES_key)
 
     encrypted_msg = AES.EncryptMessage(toServer)
     print("Encrypted Msg: ", encrypted_msg)
 
-    sendToServer = encrypted_msg + "####" + encrypted_key + "####" + public_key + "####" + str(N) + "####" + key_len
-    clientSocket.sendall(bytes(sendToServer, 'UTF-8'))
+    # sock.sendall(bytes(data,encoding="utf-8"))
+
+    # clientSocket.sendall(bytes(convertToJson(encrypted_msg, encrypted_key, public_key, N), encoding="utf-8"))
+    clientSocket.send(convertToJson(encrypted_msg, encrypted_key, public_key, N).encode())
+
+
+    print("json sent to server")
+    # sendToServer = encrypted_msg + "####" + encrypted_key + "####" + public_key + "####" + str(N) + "####" + key_len
+    # clientSocket.sendall(bytes(sendToServer, 'UTF-8'))
 
   elif fromServer == "check":
-    decrypted_msg = AES.DecryptMessage(encrypted_msg)
+    # decrypted_msg = AES.DecryptMessage(encrypted_msg)
     # print("Decrypted Msg: ", decrypted_msg)
-    printed_msg = AES.print_message(decrypted_msg)
+
+    print("sent message: ", toServer)
+    # printed_msg = AES.print_message(decrypted_msg)
+
+    fileDir = open("./Don’t Open this/DPT.txt", "r")
+    server_dpt = fileDir.readline()
+    print("message received by server: ", server_dpt)
+
+    if server_dpt == toServer:
+      print("Match")
+    else:
+      print("Did not Match")
+
+  else:
+    print("no idea what happened?")
 
 
 
-  if toServer=='close':
+  if fromServer=='close':
     break
 
 toServer.close()

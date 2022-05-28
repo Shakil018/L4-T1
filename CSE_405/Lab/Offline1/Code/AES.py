@@ -1,18 +1,21 @@
-from ast import Add
-# from multiprocessing.reduction import steal_handle
-from os import stat
-import socket
-from string import hexdigits
-# import sys
-
-import numpy as np
+# from string import hexdigits
 from BitVector import *
+import time
 
 key_word_len = 4
 num_rounds = 11
 rcon_num = 10
 rcon = []
 key_matrix = []
+padded_count = 0
+cipher_padding = 0
+
+time_start = 0;
+key_scheduling_time = 0
+encryption_time = 0
+decryption_time = 0
+
+
 
 Sbox = (
     0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
@@ -63,7 +66,6 @@ Mixer = [
      BitVector(hexstring="01"), BitVector(hexstring="02")]
 ]
 
-
 InvMixer = [
     [BitVector(hexstring="0E"), BitVector(hexstring="0B"),
      BitVector(hexstring="0D"), BitVector(hexstring="09")],
@@ -78,32 +80,30 @@ InvMixer = [
 
 def rcon_calc(size):
     rcon = []
-    for i in range(1, size+1):
+    for i in range(1, size + 1):
         if i == 1:
             rcon.append(hex(1))
-        elif int(rcon[i-2], 16) < 80:
-            temp = int(rcon[i-2], 16)*2
+        elif int(rcon[i - 2], 16) < 80:
+            temp = int(rcon[i - 2], 16) * 2
             rcon.append(hex(temp))
-        elif int(rcon[i-2], 16) > 80:
-            temp = int(rcon[i-2], 16)*2
+        elif int(rcon[i - 2], 16) > 80:
+            temp = int(rcon[i - 2], 16) * 2
             temp = temp ^ int('0x11b', 16)
             rcon.append(hex(temp))
 
-        print(rcon[i-1])
+        # print(rcon[i-1])
         # print(int(rcon[i-1], 16))
 
     rcon_arr = []
-    for i in range(1, size+1):
-        rcon_arr.append([rcon[i-1], hex(00), hex(00), hex(00)])
+    for i in range(1, size + 1):
+        rcon_arr.append([rcon[i - 1], hex(00), hex(00), hex(00)])
 
     # print("final rcon, ", rcon_arr)
 
     return rcon_arr
 
 
-
 def SubSboxVal(state_matrix, SMatrix):
-
     for j in range(4):
         for k in range(4):
             int_val = int(state_matrix[j][k], 16)
@@ -116,36 +116,34 @@ def SubSboxVal(state_matrix, SMatrix):
 
 
 def CyclicRotation(state_matrix):
-
     # 2nd row
     state_matrix[1] = state_matrix[1][1:] + [state_matrix[1][0]]
 
-    #3rd row
+    # 3rd row
     state_matrix[2] = state_matrix[2][2:] + state_matrix[2][:2]
-    
-    #4th row:
+
+    # 4th row:
     state_matrix[3] = [state_matrix[3][3]] + state_matrix[3][:3]
 
     # print("After cyclic rotation, ", state_matrix)
 
     return state_matrix
 
-def InverseCyclic(state_matrix):
 
+def InverseCyclic(state_matrix):
     # 2nd row:
-    state_matrix[1] = [ state_matrix[1][3] ] + state_matrix[1][:3]
+    state_matrix[1] = [state_matrix[1][3]] + state_matrix[1][:3]
 
     # 3rd row:
     state_matrix[2] = state_matrix[2][2:] + state_matrix[2][:2]
 
     # 4th row:
-    state_matrix[3] = state_matrix[3][1:] + [ state_matrix[3][0] ]
+    state_matrix[3] = state_matrix[3][1:] + [state_matrix[3][0]]
 
     return state_matrix
 
 
 def Mixing(state_matrix, SMatrix):
-
     temp_matrix = []
 
     for j in range(4):
@@ -154,11 +152,9 @@ def Mixing(state_matrix, SMatrix):
             temp2.append(state_matrix[j][k])
         temp_matrix.append(temp2)
 
-
     # temp_matrix = [ state_matrix[j] for j in range(4)  ]
 
     # print("temp_matrix: ", temp_matrix)
-
 
     for j in range(4):
         for k in range(4):
@@ -166,12 +162,11 @@ def Mixing(state_matrix, SMatrix):
             for m in range(4):
                 modulus = BitVector(bitstring='100011011')
 
-                temp = BitVector(intVal = int(str(temp_matrix[m][k]), 16), size = 8)                
-                state_matrix[j][k] ^= SMatrix[j][m].gf_multiply_modular(temp, modulus, 8) 
+                temp = BitVector(intVal=int(str(temp_matrix[m][k]), 16), size=8)
+                state_matrix[j][k] ^= SMatrix[j][m].gf_multiply_modular(temp, modulus, 8)
 
-            # state_matrix[j][k] = hex(state_matrix[j][k])
+                # state_matrix[j][k] = hex(state_matrix[j][k])
             state_matrix[j][k] = state_matrix[j][k].get_bitvector_in_hex()
-
 
     # print("after mixing state_matrix: ")
     # print(state_matrix)
@@ -179,11 +174,8 @@ def Mixing(state_matrix, SMatrix):
     return state_matrix
 
 
-
 def AddingRoundKey(state_matrix, index):
-
     global key_matrix
-
 
     # print("round key matrix: ")
     # print(key_matrix[index])
@@ -193,17 +185,13 @@ def AddingRoundKey(state_matrix, index):
         for k in range(4):
             state_matrix[j][k] = hex(int(state_matrix[j][k], 16) ^ int(key_matrix[index][j][k], 16))
 
-    print("After adding round key: {}".format(index))
-    print(state_matrix)
+    # print("After adding round key: {}".format(index))
+    # print(state_matrix)
 
     return state_matrix
 
 
-
-
 def AES_encryption(state_matrix):
-    
-
     global key_matrix, num_rounds
 
     # All round simulation:
@@ -221,58 +209,49 @@ def AES_encryption(state_matrix):
         # Substituting sBox Value:
         state_matrix = SubSboxVal(state_matrix, Sbox)
 
-        #cyclic rotation:
+        # cyclic rotation:
         state_matrix = CyclicRotation(state_matrix)
-        
+
         # Mixing:
         if i != (num_rounds - 1):
-            state_matrix = Mixing(state_matrix = state_matrix, SMatrix = Mixer)
+            state_matrix = Mixing(state_matrix=state_matrix, SMatrix=Mixer)
 
         # Adding Round key:
         state_matrix = AddingRoundKey(state_matrix, i)
 
-
     return state_matrix
 
 
-
-
-
 def AES_decryption(state_matrix):
-
     global key_matrix, num_rounds
 
-   # All round simulation:
+    # All round simulation:
 
     # Round 0:
 
     for i in range(4):
         for j in range(4):
-            state_matrix[i][j] = hex(int(state_matrix[i][j], 16) ^ int(key_matrix[num_rounds-1][i][j], 16))
-
+            state_matrix[i][j] = hex(int(state_matrix[i][j], 16) ^ int(key_matrix[num_rounds - 1][i][j], 16))
 
     for i in range(num_rounds - 2, -1, -1):
 
         # Inverse Shift Row:
         state_matrix = InverseCyclic(state_matrix=state_matrix)
 
-
         # Inverse Sub Bytes
-        state_matrix = SubSboxVal(state_matrix = state_matrix, SMatrix = InvSbox)
+        state_matrix = SubSboxVal(state_matrix=state_matrix, SMatrix=InvSbox)
 
         # Add round keys
-        state_matrix = AddingRoundKey(state_matrix = state_matrix, index = i)
+        state_matrix = AddingRoundKey(state_matrix=state_matrix, index=i)
 
         # Inverse Mix cols:
         if i != 0:
-            state_matrix = Mixing(state_matrix = state_matrix, SMatrix = InvMixer)
+            state_matrix = Mixing(state_matrix=state_matrix, SMatrix=InvMixer)
 
     return state_matrix
 
 
-
 def print_message(message):
-    
     msg = ''
     for i in range(len(message)):
         chunk = message[i]
@@ -286,31 +265,62 @@ def print_message(message):
 
 
 
+def print_cipher_hex(message):
+    global cipher_padding
+
+    msg = ''
+    cnt = 0
+    limit = len(message)*16 - cipher_padding
+    for i in range(len(message)):
+        chunk = message[i]
+        for j in range(4):
+            for k in range(4):
+                if cnt == limit:
+                    break
+                cnt += 1
+                bv = BitVector(intVal=int(chunk[k][j], 16), size=8)
+                ch2 = bv.get_bitvector_in_hex()
+                msg += ch2
+                # ch = chr(int(chunk[k][j], 16))
+                # msg += ch
+    print(msg)
+
+    return msg
+
+
+def print_hex(message):
+    msg = ''
+
+    for ch in message:
+        bv = BitVector(intVal = ord(ch), size = 8)
+        ch2 = bv.get_bitvector_in_hex()
+        msg += ch2
+
+    print(msg)
+
+
 
 def StateMatrixGeneration(message_hex):
-
     state_matrix = []
 
     for i in range(0, 4):
-        temp = [message_hex[j*4 + i] for j in range(4)]
+        temp = [message_hex[j * 4 + i] for j in range(4)]
         state_matrix.append(temp)
 
     return state_matrix
 
 
-def EncryptMessage(message):
-
-    global key_matrix, num_rounds
+def EncryptMessage(input_message):
+    global key_matrix, num_rounds, cipher_padding
 
     message_hex = []
     for ch in input_message:
         message_hex.append(hex(ord(ch)))
 
-
     state_matrix = []
 
     if len(message_hex) <= 16:
-        for _ in range(16-len(message_hex)):
+        for _ in range(16 - len(message_hex)):
             message_hex.append(hex(ord(' ')))
 
             # print("message_hex: ")
@@ -319,37 +329,33 @@ def EncryptMessage(message):
         temp_matrix = StateMatrixGeneration(message_hex)
 
         state_matrix.append(AES_encryption(temp_matrix))
-        
+
 
 
     else:
         if len(message_hex) % 16 != 0:
-            for _ in range(16 - (len(message_hex)%16) ):
+            cipher_padding = 16 - (len(message_hex) % 16)
+            for _ in range(cipher_padding):
                 message_hex.append(hex(ord(' ')))
 
-        loop_count = int(len(message_hex)/16)
+        loop_count = int(len(message_hex) / 16)
 
         for i in range(loop_count):
-                
-            temp_matrix = StateMatrixGeneration(message_hex[i*16 : (i+1)*16])
+            temp_matrix = StateMatrixGeneration(message_hex[i * 16: (i + 1) * 16])
 
             state_matrix.append(AES_encryption(temp_matrix))
-
 
     return state_matrix
 
 
 def DecryptMessage(encrypted_msg):
-
     global key_matrix, num_rounds
     decrypted_msg = []
 
     for i in range(len(encrypted_msg)):
-
         decrypted_msg.append(AES_decryption(encrypted_msg[i]))
 
     return decrypted_msg
-
 
 
 # ============================= W generation ==========================
@@ -357,19 +363,18 @@ def DecryptMessage(encrypted_msg):
 
 def W_generation(K, rcon):
     W = []
-    for i in range(4*(num_rounds)):
+    for i in range(4 * (num_rounds)):
         if i < key_word_len:
             W.append(K[i])
         elif i >= key_word_len and i % key_word_len == 0:
             # print("inside second cond")
-            temp = W[i-1]
+            temp = W[i - 1]
             temp = temp[1:] + [temp[0]]
 
             for j in range(len(temp)):
-                
                 # b = BitVector(hexstring = temp[j])
                 # int_val = b.intValue()
-                
+
                 int_val = int(temp[j], 16)
                 s = Sbox[int_val]
 
@@ -379,41 +384,38 @@ def W_generation(K, rcon):
 
             temp2 = []
             for j in range(len(temp)):
-                temp2.append(hex(int(W[i - key_word_len][j], 16) ^ int(temp[j], 16) ^ int(rcon[int(i/key_word_len)-1][j], 16)))
-
+                temp2.append(
+                    hex(int(W[i - key_word_len][j], 16) ^ int(temp[j], 16) ^ int(rcon[int(i / key_word_len) - 1][j],
+                                                                                 16)))
 
             W.append(temp2)
 
 
         elif i >= key_word_len and key_word_len > 6 and i % key_word_len == 4:
             # print("inside third cond")
-            temp = W[i-1]
+            temp = W[i - 1]
 
             for j in range(len(temp)):
-                
                 int_val = int(temp[j], 16)
                 s = Sbox[int_val]
                 temp[j] = hex(s)
 
-
             temp2 = []
             for j in range(len(temp)):
-                temp2.append(hex(int(W[i-key_word_len][j], 16) ^ int(temp[j], 16)))
-
+                temp2.append(hex(int(W[i - key_word_len][j], 16) ^ int(temp[j], 16)))
 
             W.append(temp2)
 
         else:
             # print("inside else")
-            temp = W[i-1]
+            temp = W[i - 1]
             temp2 = []
             for j in range(len(temp)):
-                temp2.append(hex(int(W[i-key_word_len][j], 16) ^ int(temp[j], 16)))
+                temp2.append(hex(int(W[i - key_word_len][j], 16) ^ int(temp[j], 16)))
 
             W.append(temp2)
 
     return W
-
 
     # for()
 
@@ -423,29 +425,24 @@ def W_generation(K, rcon):
 
     # for i in range(0, len(W), 4):
     #     print('round {} keys: {} {} {} {}'.format(i/4, W[i], W[i+1], W[i+2], W[i+3]))
-        # print("round 0: ", W[i], W[i+1], W[i+2], W[i+3])
+    # print("round 0: ", W[i], W[i+1], W[i+2], W[i+3])
 
 
-
-
-
-
-#=================================== Key Matrix Generation: ===============================
+# =================================== Key Matrix Generation: ===============================
 
 def Key_matrix_generation(W):
     # key_matrix = []
 
     global key_matrix
 
-    for i in range(int(len(W)/4)):
-        temp = W[i*4: (i+1)*4]
-        temp2 = [ [0, 0, 0, 0] for _ in range(4) ]
+    for i in range(int(len(W) / 4)):
+        temp = W[i * 4: (i + 1) * 4]
+        temp2 = [[0, 0, 0, 0] for _ in range(4)]
 
         for j in range(4):
             for k in range(4):
                 temp2[k][j] = temp[j][k]
         key_matrix.append(temp2)
-
 
     # print("state matrix: ")
     # print(state_matrix)
@@ -454,19 +451,14 @@ def Key_matrix_generation(W):
     # print("key matrix size: ", len(key_matrix))
 
 
-
-
-def AES_handler(choice):
-
-    global key_word_len, num_rounds, rcon_num, rcon
-
+def AES_handler(input_key):
+    global key_word_len, num_rounds, rcon_num, rcon, key_scheduling_time
 
     print("1. AES-128")
     print("2. AES-192")
     print("3. AES-256")
 
     choice = int(input("Enter choice: "))
-
 
     key_word_len = 4
     num_rounds = 11
@@ -482,26 +474,26 @@ def AES_handler(choice):
         num_rounds = 15
         rcon_num = 7
 
-    input_key = input("input AES key: ")
-
     key_hex = []
     for ch in input_key:
         key_hex.append(hex(ord(ch)))
 
-    if len(key_hex) > key_word_len*4:
-        key_hex = key_hex[:key_word_len*4]
-    elif len(key_hex) < key_word_len*4:
+    if len(key_hex) > key_word_len * 4:
+        key_hex = key_hex[:key_word_len * 4]
+    elif len(key_hex) < key_word_len * 4:
         current_len = len(key_hex)
-        for _ in range(key_word_len*4 - current_len):
+        for _ in range(key_word_len * 4 - current_len):
             ch = ' '
             key_hex.append(hex(ord(ch)))
 
     # print("After padding key_hex: ", key_hex)
 
     # generating K
+    time_start = time.time()
+
     K = []
     for i in range(key_word_len):
-        K.append(key_hex[i*4: (i+1)*4])
+        K.append(key_hex[i * 4: (i + 1) * 4])
 
     # print("this is K: ")
     # print(K)
@@ -509,40 +501,203 @@ def AES_handler(choice):
     # generating rcon:
     rcon = rcon_calc(rcon_num)
 
-    # generating W matrix: 
+    # generating W matrix:
     W = W_generation(K, rcon)
+    key_scheduling_time = time.time() - time_start
+
+    # key_scheduling_time = key_scheduling_time/(10**9)
 
     # generating Round key matrix
     Key_matrix_generation(W)
-    
+
+
+# ======================================= Bonus ======================================
+
+def EncryptFile(fileDir):
+    # global AES_input, pad_count_input, input_filename
+
+    global padded_count
+
+    # input_filename = input("Enter filename (inside ./res/): ")
+
+    myFile = open("./input_files/{}".format(fileDir), "rb")
+    file_hex = bytes.hex(myFile.read())
+    myFile.close()
+
+    print("file bytes hex")
+    # print(file_hex)
+    print(len(file_hex))
+    # print(file_hex)
+
+
+    if (len(file_hex) % 32) != 0:
+        padded_count = 32 - len(file_hex) % 32
+        file_hex = file_hex + '0' * padded_count
+        # pad_count_input = 32 - len(file_content) % 32
+        # file_content = file_content + "0" * pad_count_input
+
+    # AES_input += BitVector(hexstring=file_hex)
+
+
+    print("file bytes hex")
+    # print(file_hex)
+    print(len(file_hex))
+
+    print("padded_count : ", padded_count)
+
+    # print(file_hex)
+
+
+    text_str = ''
+    for i in range(0, len(file_hex)-1, 2):
+        # print(file_hex[i: i+2], i)
+        bv = BitVector(hexstring=file_hex[i: i+2])
+        ascii_ch = bv.get_bitvector_in_ascii()
+        # print(ascii_ch, i)
+        text_str += ascii_ch
+
+    print("=================================================================")
+    # print(text_str)
+    print(file_hex)
+
+    encrypted = EncryptMessage(text_str)
+    print("===================================================================")
+    print("===================================================================")
+    print("===================================================================")
+    print(" Encrypted" )
+    print(encrypted)
+
+    return encrypted
+
+
+def DecryptFile(encrypted_file, fileName):
+    # global decipher_output
+
+    global padded_count
+
+    decrypted_file = DecryptMessage(encrypted_file)
+    print("===================================================================")
+    print("===================================================================")
+    print("===================================================================")
+    print(" Decrypted")
+
+    print(decrypted_file)
+
+    printable_file = []
+    for i in range(len(decrypted_file)):
+        chunk = decrypted_file[i]
+        for j in range(4):
+            for k in range(4):
+                # ch = chr(int(chunk[k][j], 16))
+
+                hexVal_bv = BitVector(intVal=int(chunk[k][j], 16), size=8)
+
+                # print(chunk[k][j], int(chunk[k][j], 16))
+                # hexVal = hexVal_bv.get_bitvector_in_hex()
+                # printable_file += hexVal
+                # printable_file += chunk[k][j]
+                printable_file.append(ord(hexVal_bv.get_bitvector_in_ascii()))
+
+
+    # print(printable_file)
+
+    printable_file = bytearray(printable_file[:-padded_count])
+    immutable_bytes = bytes(printable_file)
+
+    # decrypted_file_str = print_message(decrypted_file)
+
+    print(printable_file)
+
+    file = open("./output_files/{}".format(fileName), "wb")
+    # print(plain_arr)
+    # bytes = b"0x410x420x43"
+    file.write(immutable_bytes)
+    file.close()
 
 
 
-    # print("this is rcon: ", rcon)
+
+    # file_obj = open("./output_files/{}".format(fileName), "wb+")
+    # file_obj.write(bytes.fromhex(
+    #     printable_file[: len(printable_file) - padded_count]))
+    # file_obj.close()
+
+    # file_obj.write(bytes.fromhex(
+    #     decipher_output.get_bitvector_in_hex()[: len(decipher_output.get_bitvector_in_hex()) - padded_count]))
+    # file.close()
 
 
-
-
-
-
-#===================================== Input Encryption ===================================
-#=====================================   AES   ============================================
+# ===================================== Input Encryption ===================================
+# =====================================   AES   ============================================
 # provide num_rounds = 11 for AES-128
 #                    = 13 for AES-192
 #                    = 15 for AES-224
 
 
-AES_handler()
+def main():
 
-input_message = input("Enter your message: ")
-encrypted_msg = EncryptMessage(input_message) 
-print("Encrypted Msg: ", encrypted_msg)
+    global key_scheduling_time, encryption_time, decryption_time
 
-decrypted_msg = DecryptMessage(encrypted_msg)    
-print("Decrypted Msg: ", decrypted_msg)
-print_message(decrypted_msg)
+    input_key = input("input AES key: ")
+
+    AES_handler(input_key)
+
+    print("1. Input Plain Text: ")
+    print("2. Input File")
+
+    option = input("Enter choice: ")
+
+    if int(option) == 1:
+        input_message = input("Enter Plain Text: ")
+
+        print("Plain text:")
+        print(input_message)
+        print_hex(input_message)
+
+        print("\nKey: ")
+        print(input_key)
+        print_hex(input_key)
+
+        time_start = time.time()
+        encrypted_msg = EncryptMessage(input_message)
+        encryption_time = time.time() - time_start
+        print("\nCipher text: ")
+        print_cipher_hex(encrypted_msg)
+        print_message(encrypted_msg)
+
+        time_start = time.time()
+        decrypted_msg = DecryptMessage(encrypted_msg)
+        decryption_time = time.time() - time_start
+
+        print("Deciphered Text: ")
+        print_cipher_hex(decrypted_msg)
+        print_message(decrypted_msg)
 
 
+    elif int(option) == 2:
+        fileDir = input("Enter filename: ")
+
+        time_start = time.time()
+        encrypted_file = EncryptFile(fileDir)
+        encryption_time = time.time() - time_start
+
+        time_start = time.time()
+        DecryptFile(encrypted_file, fileDir)
+        decryption_time = time.time() - time_start
+
+    else:
+        print("Unknown Command")
+
+
+    print("\nExecution Time: ")
+    print("Key Scheduling: {}".format(key_scheduling_time))
+    print("Encryption Time: {}".format(encryption_time))
+    print("Decryption Time: {}".format(decryption_time))
+
+
+if __name__ == "__main__":
+    # stuff only to run when not called via 'import' here
+    main()
 
 # receive data from the server and decoding to get the string.
 # print (s.recv(1024).decode())
